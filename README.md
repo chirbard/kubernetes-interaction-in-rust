@@ -27,3 +27,13 @@ cargo build
 cargo run
 cargo update
 ```
+
+## Usage
+
+```
+Usage:
+  new - Create a new pod
+  delete <session_id> - Delete the pod with the given session ID
+  list - List all pods
+  <session_id> <command> - Execute a command in the pod
+```
