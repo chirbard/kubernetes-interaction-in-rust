@@ -21,4 +21,9 @@ kubectl get pods
 kubectl get deployments
 kubectl get services
 kubectl delete deployment <name>
+
+cargo fetch
+cargo build
+cargo run
+cargo update
 ```
