@@ -4,11 +4,35 @@ use std::env;
 use tokio::{self, io::AsyncReadExt};
 use uuid;
 
+fn create_pod_spec() -> PodSpec {
+    PodSpec {
+        containers: vec![k8s_openapi::api::core::v1::Container {
+            name: "terminal-container".to_string(),
+            image: Some("ubuntu:latest".to_string()),
+            command: Some(vec![
+                "/bin/bash".to_string(),
+                "-c".to_string(),
+                "tail -f /dev/null".to_string(),
+            ]),
+            volume_mounts: Some(vec![VolumeMount {
+                name: "user-data".to_string(),
+                mount_path: "/home/user".to_string(),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }],
+        volumes: Some(vec![Volume {
+            name: "user-data".to_string(),
+            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    }
+}
+
 async fn create_pod(client: Client) -> Result<(), kube::Error> {
-    // Generate a unique session ID
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    // Create a Pod with a terminal
     let pods: Api<Pod> = Api::default_namespaced(client);
     let pod = Pod {
         metadata: kube::core::ObjectMeta {
@@ -19,29 +43,7 @@ async fn create_pod(client: Client) -> Result<(), kube::Error> {
             )])),
             ..Default::default()
         },
-        spec: Some(PodSpec {
-            containers: vec![k8s_openapi::api::core::v1::Container {
-                name: "terminal-container".to_string(),
-                image: Some("ubuntu:latest".to_string()),
-                command: Some(vec![
-                    "/bin/bash".to_string(),
-                    "-c".to_string(),
-                    "tail -f /dev/null".to_string(),
-                ]),
-                volume_mounts: Some(vec![VolumeMount {
-                    name: "user-data".to_string(),
-                    mount_path: "/home/user".to_string(),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            }],
-            volumes: Some(vec![Volume {
-                name: "user-data".to_string(),
-                empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
-                ..Default::default()
-            }]),
-            ..Default::default()
-        }),
+        spec: Some(create_pod_spec()),
         ..Default::default()
     };
 
@@ -86,10 +88,9 @@ async fn execute_command(
     let mut stdout_reader = exec.stdout().unwrap();
     let mut output = String::new();
     let mut buf = [0u8; 1024];
-    // stdout_reader.read_exact(&mut buf).await;
     loop {
         let result_length = match stdout_reader.read(&mut buf).await {
-            Ok(size) => size, // Extract the usize value
+            Ok(size) => size,
             Err(e) => {
                 eprintln!("Error reading from stdout: {}", e);
                 return Err(kube::Error::ReadEvents(e));
@@ -98,7 +99,7 @@ async fn execute_command(
         println!("Read {} bytes", result_length);
         output.push_str(&String::from_utf8_lossy(&buf[..result_length]));
         if result_length < 1024 {
-            break; // End of stream
+            break;
         }
     }
 
@@ -109,17 +110,13 @@ async fn execute_command(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get command-line arguments
     let args: Vec<String> = env::args().collect();
 
-    // Create a Kubernetes client
     let client = Client::try_default().await?;
 
-    // Check if the "new" parameter is passed
     if args.len() > 1 && args[1] == "new" {
         create_pod(client).await?;
     } else if args.len() > 1 && args[1] == "delete" {
-        // If "delete" is passed, delete the pod with the given session ID
         if args.len() < 3 {
             println!("Usage: delete <session_id>");
             return Ok(());
@@ -127,12 +124,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let session_id = args[2].clone();
         delete_pod(client, session_id).await?;
     } else if args.len() > 1 && args[1] == "list" {
-        // If "list" is passed, list all pods
         list_pods(client).await?;
     } else if args.len() > 2 {
-        // If session ID and command are provided
         let session_id = args[1].clone();
-        let command = args[2..].join(" "); // Combine all remaining arguments as the command
+        let command = args[2..].join(" ");
         execute_command(client, session_id, command).await?;
     } else {
         println!("Usage:");
